@@ -1,0 +1,79 @@
+name: Make IPA (With Liquid Glass)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: "URL to the decrypted IPA file"
+        default: ""
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: "build"
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Main
+        uses: actions/checkout@v5.0.0
+        with:
+          path: main
+          submodules: recursive
+
+      - name: Download and validate IPA
+        run: |
+          wget "${{ inputs.ipa_url }}" --no-verbose -O ${{ github.workspace }}/decrypted.ipa
+          file_type=$(file --mime-type -b ${{ github.workspace }}/decrypted.ipa)
+          if [[ "$file_type" != "application/x-ios-app" && "$file_type" != "application/zip" ]]; then
+            echo "::error::Validation failed: The downloaded file is not a valid IPA. Detected type: $file_type."
+            exit 1
+          fi
+      - name: Install Dependencies
+        run: brew install make ldid
+
+      - name: Set PATH environment variable
+        run: echo "$(brew --prefix make)/libexec/gnubin" >> $GITHUB_PATH
+
+      - name: Install cyan
+        run: pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
+
+      - name: Download Tweak
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag_name=$(gh release view --repo JeffreyCA/Apollo-ImprovedCustomApi --json tagName --jq ".tagName")
+          echo "TWEAK_TAG=$tag_name" >> $GITHUB_ENV
+          gh release download --repo JeffreyCA/Apollo-ImprovedCustomApi --pattern "*rootless.deb" --output ${{ github.workspace }}/tweak.deb
+
+      - name: Inject tweaks into IPA
+        run: cyan -i decrypted.ipa -o AppLG_${{ env.TWEAK_TAG }}.ipa -uwef tweak.deb -s
+
+      - name: Liquid Glass
+        id: liquid_glass
+        run: |
+          mydir=${{ github.workspace }}/main
+          chmod +x $mydir/liquid_glass.sh
+          INPUT_IPA_NAME="AppLG_${{ env.TWEAK_TAG }}.ipa"
+          $mydir/liquid_glass.sh "${INPUT_IPA_NAME}" -o "temp.ipa"
+          mv "temp.ipa" "${INPUT_IPA_NAME}"
+
+      - name: Publish Draft Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create \
+            ${{ env.TWEAK_TAG }} \
+            AppLG_${{ env.TWEAK_TAG }}.ipa \
+            --repo $GITHUB_REPOSITORY \
+            --draft \
+            --title "${{ env.TWEAK_TAG }}"
+      - name: Output Release URL
+        run: |
+          echo "::notice::Release available at: https://github.com/${{ github.repository }}/releases"
