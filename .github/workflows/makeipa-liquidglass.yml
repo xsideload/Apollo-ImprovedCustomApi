@@ -53,16 +53,14 @@ jobs:
           gh release download --repo JeffreyCA/Apollo-ImprovedCustomApi --pattern "*rootless.deb" --output ${{ github.workspace }}/tweak.deb
 
       - name: Inject tweaks into IPA
-        run: cyan -i decrypted.ipa -o AppLG_${{ env.TWEAK_TAG }}.ipa -uwef tweak.deb -s
+        run: cyan -i decrypted.ipa -o App_${{ env.TWEAK_TAG }}.ipa -uwef tweak.deb -s
 
       - name: Liquid Glass
         id: liquid_glass
         run: |
           mydir=${{ github.workspace }}/main
           chmod +x $mydir/liquid_glass.sh
-          INPUT_IPA_NAME="AppLG_${{ env.TWEAK_TAG }}.ipa"
-          $mydir/liquid_glass.sh "${INPUT_IPA_NAME}" -o "temp.ipa"
-          mv "temp.ipa" "${INPUT_IPA_NAME}"
+          $mydir/liquid_glass.sh "App_${{ env.TWEAK_TAG }}.ipa" -o "AppLG_${{ env.TWEAK_TAG }}.ipa"
 
       - name: Publish Draft Release
         env:
